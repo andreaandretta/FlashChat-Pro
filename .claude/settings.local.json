@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npx expo start)",
+      "Bash(npx expo start:*)",
+      "Bash(timeout:*)",
+      "Bash(npx expo-doctor:*)",
+      "Bash(npm install:*)",
+      "Bash(start http://localhost:8081)",
+      "Bash(npx expo install:*)",
+      "Bash(npx expo run:android)",
+      "Bash(eas login:*)",
+      "Bash(eas build:*)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

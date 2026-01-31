@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "FlashChat Pro",
+    "slug": "flashchat-pro",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#25D366"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.flashchat.pro"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#25D366"
+      },
+      "package": "com.flashchat.pro",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow FlashChat Pro to access your camera"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9a5c127d-64d5-4475-844f-1107041ff42d"
+      }
+    }
+  }
+}
