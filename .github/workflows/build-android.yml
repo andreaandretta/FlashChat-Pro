@@ -1,10 +1,11 @@
 # FlashChat Pro - Android Build Pipeline
 # Build APK usando GitHub Actions (bypassa EAS Cloud)
 # 
-# Questo workflow:
-# 1. Decodifica il keystore dai secrets
-# 2. Esegue la build locale con EAS
-# 3. Carica l'APK come artifact scaricabile
+# PREREQUISITI: Configura questi GitHub Secrets:
+# - ANDROID_KEYSTORE_BASE64: Keystore in base64
+# - KEYSTORE_PASSWORD: Password del keystore
+# - KEY_ALIAS: Alias della chiave (es: flashchat)
+# - KEY_PASSWORD: Password della chiave
 
 name: 🚀 Build Android APK
 
@@ -21,7 +22,7 @@ on:
           - preview
           - production
   
-  # Trigger automatico su push al main (opzionale)
+  # Trigger automatico su push al main
   push:
     branches:
       - main
@@ -46,6 +47,29 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
       
+      - name: 🔍 Check required secrets
+        run: |
+          echo "Checking if required secrets are configured..."
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "❌ ERROR: ANDROID_KEYSTORE_BASE64 secret is not set!"
+            echo "Please go to: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "And create the required secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            echo "❌ ERROR: KEYSTORE_PASSWORD secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.KEY_ALIAS }}" ]; then
+            echo "❌ ERROR: KEY_ALIAS secret is not set!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.KEY_PASSWORD }}" ]; then
+            echo "❌ ERROR: KEY_PASSWORD secret is not set!"
+            exit 1
+          fi
+          echo "✅ All required secrets are configured!"
+      
       - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
@@ -67,26 +91,31 @@ jobs:
       
       - name: 🔐 Decode Keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/flashchat.jks
-          echo "Keystore decoded successfully"
-        shell: bash
+          mkdir -p android
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/release-key.jks
+          if [ -f android/release-key.jks ]; then
+            echo "✅ Keystore decoded successfully"
+            ls -la android/release-key.jks
+          else
+            echo "❌ Failed to decode keystore"
+            exit 1
+          fi
       
       - name: 📝 Create credentials.json for EAS
         run: |
-          mkdir -p android
-          cat > credentials.json << EOF
+          cat > credentials.json << 'CREDENTIALS_EOF'
           {
             "android": {
               "keystore": {
-                "keystorePath": "android/flashchat.jks",
+                "keystorePath": "android/release-key.jks",
                 "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
                 "keyAlias": "${{ secrets.KEY_ALIAS }}",
                 "keyPassword": "${{ secrets.KEY_PASSWORD }}"
               }
             }
           }
-          EOF
-          echo "credentials.json created"
+          CREDENTIALS_EOF
+          echo "✅ credentials.json created"
       
       # ============================================
       # 3. DEPENDENCIES
@@ -104,11 +133,9 @@ jobs:
       
       - name: 🏗️ Run EAS Build (Local)
         run: |
-          # Determina il profilo di build
           PROFILE="${{ github.event.inputs.build_profile || 'preview' }}"
           echo "Building with profile: $PROFILE"
           
-          # Esegue la build locale
           npx eas build \
             --platform android \
             --profile $PROFILE \
@@ -138,15 +165,16 @@ jobs:
       - name: 🧹 Cleanup sensitive files
         if: always()
         run: |
-          rm -f android/flashchat.jks || true
-          rm -f credentials.json || true
-          echo "Sensitive files cleaned up"
+          rm -f android/release-key.jks 2>/dev/null || true
+          rm -f credentials.json 2>/dev/null || true
+          echo "✅ Sensitive files cleaned up"
       
       # ============================================
       # 7. SUMMARY
       # ============================================
       
       - name: 📋 Build Summary
+        if: success()
         run: |
           echo "## 🎉 Build Completed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
