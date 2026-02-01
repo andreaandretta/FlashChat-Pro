@@ -1,31 +1,28 @@
 # FlashChat Pro - Android Build Pipeline
-# Build APK usando GitHub Actions (bypassa EAS Cloud)
+# Build APK usando GitHub Actions (BYPASS COMPLETO EAS CLOUD)
 # 
 # PREREQUISITI: Configura questi GitHub Secrets:
-# - ANDROID_KEYSTORE_BASE64: Keystore in base64
+# - ANDROID_KEYSTORE_BASE64: Keystore in base64 (NO newline!)
 # - KEYSTORE_PASSWORD: Password del keystore
-# - KEY_ALIAS: Alias della chiave (es: flashchat)
+# - KEY_ALIAS: Alias della chiave
 # - KEY_PASSWORD: Password della chiave
 
 name: 🚀 Build Android APK
 
 on:
-  # Trigger manuale
   workflow_dispatch:
     inputs:
-      build_profile:
-        description: 'Profilo di build (preview/production)'
+      build_type:
+        description: 'Tipo di build'
         required: true
-        default: 'preview'
+        default: 'release'
         type: choice
         options:
-          - preview
-          - production
+          - release
+          - debug
   
-  # Trigger automatico su push al main
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths-ignore:
       - '**.md'
       - '.gitignore'
@@ -35,151 +32,206 @@ env:
   JAVA_VERSION: '17'
 
 jobs:
+  check-secrets:
+    name: 🔐 Check Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_secrets: ${{ steps.check.outputs.has_secrets }}
+    steps:
+      - name: Check required secrets
+        id: check
+        run: |
+          echo "🔍 Checking GitHub Secrets..."
+          
+          MISSING=()
+          
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            MISSING+=("ANDROID_KEYSTORE_BASE64")
+          fi
+          
+          if [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            MISSING+=("KEYSTORE_PASSWORD")
+          fi
+          
+          if [ -z "${{ secrets.KEY_ALIAS }}" ]; then
+            MISSING+=("KEY_ALIAS")
+          fi
+          
+          if [ -z "${{ secrets.KEY_PASSWORD }}" ]; then
+            MISSING+=("KEY_PASSWORD")
+          fi
+          
+          if [ ${#MISSING[@]} -ne 0 ]; then
+            echo "❌ MISSING SECRETS:"
+            for secret in "${MISSING[@]}"; do
+              echo "   - $secret"
+            done
+            echo ""
+            echo "👉 Come configurare:"
+            echo "   1. Vai su: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "   2. Clicca 'New repository secret'"
+            echo "   3. Aggiungi ognuno dei secrets mancanti"
+            echo ""
+            echo "📋 Per generare il keystore in locale:"
+            echo "   keytool -genkey -v -keystore flashchat.keystore -alias flashchat -keyalg RSA -keysize 2048 -validity 10000"
+            echo "   base64 -w 0 flashchat.keystore"
+            echo ""
+            echo "❗ IMPORTANTE: Il base64 deve essere generato con 'base64 -w 0' (no newline)"
+            echo ""
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+          
+          echo "✅ All secrets are configured!"
+          echo "has_secrets=true" >> $GITHUB_OUTPUT
+
   build-android:
     name: 📦 Build APK
+    needs: check-secrets
     runs-on: ubuntu-latest
+    if: needs.check-secrets.outputs.has_secrets == 'true'
     
     steps:
-      # ============================================
-      # 1. SETUP INIZIALE
-      # ============================================
-      
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
       
-      - name: 🔍 Check required secrets
-        run: |
-          echo "Checking if required secrets are configured..."
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "❌ ERROR: ANDROID_KEYSTORE_BASE64 secret is not set!"
-            echo "Please go to: https://github.com/${{ github.repository }}/settings/secrets/actions"
-            echo "And create the required secrets."
-            exit 1
-          fi
-          if [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
-            echo "❌ ERROR: KEYSTORE_PASSWORD secret is not set!"
-            exit 1
-          fi
-          if [ -z "${{ secrets.KEY_ALIAS }}" ]; then
-            echo "❌ ERROR: KEY_ALIAS secret is not set!"
-            exit 1
-          fi
-          if [ -z "${{ secrets.KEY_PASSWORD }}" ]; then
-            echo "❌ ERROR: KEY_PASSWORD secret is not set!"
-            exit 1
-          fi
-          echo "✅ All required secrets are configured!"
-      
-      - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
       
-      - name: ☕ Setup Java ${{ env.JAVA_VERSION }}
+      - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
       
-      - name: 📱 Setup Android SDK
+      - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
       
-      # ============================================
-      # 2. KEYSTORE
-      # ============================================
+      - name: 📦 Install dependencies
+        run: |
+          npm ci
+          npm install -g expo-cli
+      
+      - name: 🏗️ Expo Prebuild
+        run: |
+          npx expo prebuild --platform android --clean
+          echo "✅ Android project generated"
       
       - name: 🔐 Decode Keystore
         run: |
-          mkdir -p android
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/release-key.jks
-          if [ -f android/release-key.jks ]; then
-            echo "✅ Keystore decoded successfully"
-            ls -la android/release-key.jks
-          else
-            echo "❌ Failed to decode keystore"
+          mkdir -p android/app
+          
+          # Decodifica base64 con gestione errori
+          if ! echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore 2>/dev/null; then
+            echo "❌ ERROR: Invalid base64 in ANDROID_KEYSTORE_BASE64 secret!"
+            echo ""
+            echo "Possible causes:"
+            echo "   1. Secret not set"
+            echo "   2. Base64 was copied with newlines or spaces"
+            echo "   3. Corrupted keystore file"
+            echo ""
+            echo "To fix:"
+            echo "   base64 -w 0 your-keystore.jks"
+            echo "   Copy the ENTIRE output as the secret value"
             exit 1
           fi
-      
-      - name: 📝 Create credentials.json for EAS
-        run: |
-          cat > credentials.json << 'CREDENTIALS_EOF'
-          {
-            "android": {
-              "keystore": {
-                "keystorePath": "android/release-key.jks",
-                "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
-                "keyAlias": "${{ secrets.KEY_ALIAS }}",
-                "keyPassword": "${{ secrets.KEY_PASSWORD }}"
-              }
-            }
-          }
-          CREDENTIALS_EOF
-          echo "✅ credentials.json created"
-      
-      # ============================================
-      # 3. DEPENDENCIES
-      # ============================================
-      
-      - name: 📦 Install dependencies
-        run: npm ci || npm install
-      
-      - name: 🔧 Install EAS CLI globally
-        run: npm install -g eas-cli
-      
-      # ============================================
-      # 4. BUILD
-      # ============================================
-      
-      - name: 🏗️ Run EAS Build (Local)
-        run: |
-          PROFILE="${{ github.event.inputs.build_profile || 'preview' }}"
-          echo "Building with profile: $PROFILE"
           
-          npx eas build \
-            --platform android \
-            --profile $PROFILE \
-            --local \
-            --non-interactive \
-            --output ./flashchat-pro.apk
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EAS_LOCAL_BUILD_SKIP_CLEANUP: 1
+          # Verifica che il file esista e non sia vuoto
+          if [ ! -s android/app/release.keystore ]; then
+            echo "❌ ERROR: Decoded keystore is empty!"
+            exit 1
+          fi
+          
+          echo "✅ Keystore decoded successfully"
+          ls -lh android/app/release.keystore
       
-      # ============================================
-      # 5. UPLOAD ARTIFACT
-      # ============================================
+      - name: 📝 Configure Signing
+        run: |
+          # Configura gradle.properties
+          cat >> android/gradle.properties << EOF
+
+# Signing Config
+MYAPP_UPLOAD_STORE_FILE=release.keystore
+MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+EOF
+          
+          # Patch build.gradle per usare il signing
+          cat >> android/app/build.gradle << 'EOF'
+
+// CI Signing Config
+android {
+    signingConfigs {
+        release {
+            storeFile file(MYAPP_UPLOAD_STORE_FILE)
+            storePassword MYAPP_UPLOAD_STORE_PASSWORD
+            keyAlias MYAPP_UPLOAD_KEY_ALIAS
+            keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+EOF
+          echo "✅ Signing configured"
       
-      - name: 📤 Upload APK Artifact
+      - name: ⚡ Build APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'release' }}"
+          BUILD_TYPE_CAP=$(echo "$BUILD_TYPE" | sed 's/.*/\u&/')
+          
+          echo "Building: assemble${BUILD_TYPE_CAP}"
+          ./gradlew "assemble${BUILD_TYPE_CAP}" --no-daemon --console=plain
+      
+      - name: 📋 Find and Rename APK
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'release' }}"
+          BUILD_TYPE_LOWER=$(echo "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')
+          
+          # Trova l'APK
+          APK_PATH=$(find android -name "*.apk" -type f | grep -E "(${BUILD_TYPE_LOWER}|universal)" | head -1)
+          
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found!"
+            echo "Searching all APKs..."
+            find android -name "*.apk" -type f
+            exit 1
+          fi
+          
+          echo "✅ Found APK: $APK_PATH"
+          cp "$APK_PATH" "./FlashChat-Pro-${BUILD_TYPE}.apk"
+          ls -lh "./FlashChat-Pro-${BUILD_TYPE}.apk"
+      
+      - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlashChat-Pro-${{ github.event.inputs.build_profile || 'preview' }}-${{ github.sha }}
-          path: ./flashchat-pro.apk
+          name: FlashChat-Pro-${{ github.event.inputs.build_type || 'release' }}-${{ github.run_number }}
+          path: ./*.apk
           retention-days: 30
-          if-no-files-found: error
       
-      # ============================================
-      # 6. CLEANUP
-      # ============================================
-      
-      - name: 🧹 Cleanup sensitive files
+      - name: 🧹 Cleanup
         if: always()
         run: |
-          rm -f android/release-key.jks 2>/dev/null || true
-          rm -f credentials.json 2>/dev/null || true
-          echo "✅ Sensitive files cleaned up"
+          rm -f android/app/release.keystore ./*.apk 2>/dev/null || true
       
-      # ============================================
-      # 7. SUMMARY
-      # ============================================
-      
-      - name: 📋 Build Summary
+      - name: 📋 Summary
         if: success()
         run: |
-          echo "## 🎉 Build Completed!" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Build Completato!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Profile:** ${{ github.event.inputs.build_profile || 'preview' }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build:** ${{ github.event.inputs.build_type || 'release' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📥 Download the APK from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
+          echo "📥 Scarica l'APK dagli **Artifacts** ☝️" >> $GITHUB_STEP_SUMMARY

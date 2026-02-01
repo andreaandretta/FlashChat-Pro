@@ -68,3 +68,11 @@ credentials.json
 
 # Watchman
 .watchmanconfig
+
+# Keystore base64 backup
+*.keystore.b64
+
+# CI/CD Secrets
+flashchat-pro.keystore
+flashchat-pro.keystore.b64
+github-secrets.txt
