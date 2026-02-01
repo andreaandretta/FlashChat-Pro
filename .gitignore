@@ -60,5 +60,11 @@ coverage/
 # EAS Build
 .easignore
 
+# Keystore & Signing (NEVER COMMIT!)
+*.jks
+*.keystore
+flashchat_base64.txt
+credentials.json
+
 # Watchman
 .watchmanconfig

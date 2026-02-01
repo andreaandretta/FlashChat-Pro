@@ -11,6 +11,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-ml-kit/text-recognition": "^1.5.2",
+    "canvas": "^3.2.1",
     "expo": "~54.0.32",
     "expo-camera": "~17.0.10",
     "expo-clipboard": "~8.0.8",
@@ -18,7 +19,9 @@
     "expo-modules-core": "~3.0.29",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
