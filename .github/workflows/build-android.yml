@@ -138,8 +138,8 @@ jobs:
       - name: 🧹 Cleanup sensitive files
         if: always()
         run: |
-          rm -f android/flashchat.jks
-          rm -f credentials.json
+          rm -f android/flashchat.jks || true
+          rm -f credentials.json || true
           echo "Sensitive files cleaned up"
       
       # ============================================
